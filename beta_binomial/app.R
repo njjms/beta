@@ -1,8 +1,5 @@
 library(dplyr)
 library(shiny)
-library(gganimate)
-library(transformr)
-library(tweenr)
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -13,29 +10,20 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
-            selectInput("prior",
-                        label = "Select beta prior:",
-                        choices = list("Jeffrey's prior" = 1,
-                                       "User-defined" = 2),
-                        selected = 1
+            numericInput(
+                inputId = "user_alpha",
+                label = "Input alpha parameter",
+                min = 0,
+                value = .5,
+                step = 1
             ),
-                conditionalPanel(
-                        condition = "input.prior == 2",
-                        numericInput(
-                            inputId = "user_alpha",
-                            label = "Input alpha parameter",
-                            min = 0,
-                            value = .5,
-                            step = 1
-                        ),
-                        numericInput(
-                            inputId = "user_beta",
-                            label = "Input beta parameter",
-                            min = 0,
-                            value = .5,
-                            step = 1
-                        )
-                ),
+            numericInput(
+                inputId = "user_beta",
+                label = "Input beta parameter",
+                min = 0,
+                value = .5,
+                step = 1
+            ),
             numericInput(inputId = "successes",
                         label = "Number of successes:",
                         min = 0,
@@ -47,56 +35,69 @@ ui <- fluidPage(
                         min = 0,
                         value = 50,
                         step = 1
+            ),
+            numericInput(inputId = "requirement",
+                        label = "Enter product requirement:",
+                        min = 0,
+                        max = 1,
+                        value = .99,
+                        step = .01
             )
         ),
 
         # Show a plot of the generated distribution
         mainPanel(
-           imageOutput("distPlot")
+            textOutput("p_greater"),
+            plotlyOutput("distPlot")
         )
     )
 )
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
-    x <- seq(0, 1, by=.01)
-    plot_data <- list()
+    x <- seq(0, 1, by=.001)
     
     observe({
-        prior_alpha <- if_else(input$prior == 1, .5, input$user_alpha)
-        prior_beta <- if_else(input$prior == 1, .5, input$user_beta)
-        posterior_alpha <- prior_alpha + input$successes
-        posterior_beta <- prior_beta + input$total - input$successes
+        posterior_alpha <- input$user_alpha + input$successes
+        posterior_beta <- input$user_beta + input$total - input$successes
         
-        alphas <- seq(prior_alpha, posterior_alpha, by = abs((posterior_alpha - prior_alpha)/99))
-        betas <- seq(prior_beta, posterior_beta, by = abs((posterior_beta - prior_beta)/99))
-       
-        for (frame_number in 1:100) {
-            tmp_plot_data <- data.frame(
-                x = x,
-                frame = frame_number,
-                densities = c(
-                    dbeta(x, 
-                          shape1 = alphas[frame_number],
-                          shape2 = betas[frame_number]),
-                )
-            )
-            plot_data[[i]] <- tmp_plot_data
-        }
-        plot_data <- bind_rows(plot_data)
+        plot_data <- data.frame(
+            x = x,
+            densities = dbeta(x, 
+                              shape1 = posterior_alpha,
+                              shape2 = posterior_beta)
+        )
+        
+        output$p_greater <- renderText(
+            paste0("Posterior probability of greater than or equal to requirement: ",
+                   round(
+                       pbeta(input$requirement, 
+                             shape1 = posterior_alpha,
+                             shape2 = posterior_beta,
+                             lower.tail = FALSE)*100, 5), "%")
+        )
     
-        output$distPlot <- renderImage({
-            outfile <- tempfile(fileext = ".gif")
-            p <- ggplot(plot_data) +
-                geom_line(mapping = aes(x = x,
-                                        y = densities)) +
-                transition_states(frames, state_length = 1)
-            anim_save("outfile.gif", animate(p))
-            list(
-                src = "outfile.gif",
-                contentType = "image/gif"
+        output$distPlot <- renderPlotly({
+            validate(
+                need(input$successes <= input$total,
+                     "Number of successes needs to be less than or equal to total.")
             )
-        }, deleteFile = TRUE)
+            p <- ggplot(plot_data) +
+                labs(x = "probability",
+                     y = "pdf") +
+                geom_line(mapping = aes(x = x, y = densities),
+                          color = "black",
+                          alpha = .7) +
+                geom_ribbon(mapping = aes(x = x, ymax = densities),
+                            ymin = 0,
+                            fill = "dodgerblue1",
+                            alpha = .4) +
+                geom_vline(xintercept = input$requirement,
+                           linetype = "dotted",
+                           color = "black",
+                           size = .1) 
+            ggplotly(p)
+        })
     }) # end of observe() environment
 }
 
