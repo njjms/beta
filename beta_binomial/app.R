@@ -48,6 +48,7 @@ ui <- fluidPage(
         # Show a plot of the generated distribution
         mainPanel(
             textOutput("p_greater"),
+            textOutput("p_means"),
             plotlyOutput("distPlot")
         )
     )
@@ -76,6 +77,11 @@ server <- function(input, output, session) {
                              shape2 = posterior_beta,
                              lower.tail = FALSE)*100, 5), "%")
         )
+        
+        output$p_means <- renderText(
+            paste0("Observed estimate: ", round(input$successes/input$total*100, 5), "%", "\n",
+                   "Posterior Mean: ", round(posterior_alpha/(posterior_alpha + posterior_beta)*100, 5), "%")
+        )
     
         output$distPlot <- renderPlotly({
             validate(
@@ -84,7 +90,8 @@ server <- function(input, output, session) {
             )
             p <- ggplot(plot_data) +
                 labs(x = "probability",
-                     y = "pdf") +
+                     y = "pdf",
+                     title = paste0("Posterior Beta \u03b1 = ", posterior_alpha, " \u03b2 = ", posterior_beta)) +
                 geom_line(mapping = aes(x = x, y = densities),
                           color = "black",
                           alpha = .7) +
